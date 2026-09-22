@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+exec > >(tee -a /var/log/k8s-bootstrap.log) 2>&1
+
+echo "=== [1/5] Disable swap (persistently) ==="
+swapoff -a || true
+sed -i.bak '/swap/s/^/#/' /etc/fstab
+
+echo "=== [2/5] Load kernel modules ==="
+cat <<'EOF' > /etc/modules-load.d/k8s.conf
+overlay
+br_netfilter
+EOF
+modprobe overlay
+modprobe br_netfilter
+
+echo "=== [3/5] sysctl for Kubernetes networking ==="
+cat <<'EOF' > /etc/sysctl.d/k8s.conf
+net.bridge.bridge-nf-call-iptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward = 1
+EOF
+sysctl --system
+
+echo "=== [4/5] Install and configure containerd ==="
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y containerd
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+
+echo "=== [5/5] Install kubeadm, kubelet, kubectl ==="
+apt-get install -y apt-transport-https ca-certificates curl gpg
+mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key \
+  | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.34/deb/ /' \
+  > /etc/apt/sources.list.d/kubernetes.list
+apt-get update
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+%{ if role == "control-plane" ~}
+echo "=== Control-plane: kubeadm init ==="
+# /etc/kubernetes/pki/ca.crt + ca.key were already written by cloud-init
+# write_files below. kubeadm detects them and reuses this CA instead of
+# generating a new one -- this is what makes the pre-computed
+# discovery-token-ca-cert-hash baked into the workers' cloud-init valid.
+kubeadm init \
+  --token=${token} \
+  --token-ttl=0 \
+  --apiserver-advertise-address=${node_ip} \
+  --pod-network-cidr=${pod_cidr} \
+  --node-name=${hostname}
+
+mkdir -p /home/ubuntu/.kube
+cp -i /etc/kubernetes/admin.conf /home/ubuntu/.kube/config
+chown -R ubuntu:ubuntu /home/ubuntu/.kube
+
+echo "=== Control-plane: install Calico (retrying on transient pull/network issues) ==="
+export KUBECONFIG=/etc/kubernetes/admin.conf
+for i in $(seq 1 10); do
+  if kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/${calico_version}/manifests/calico.yaml; then
+    break
+  fi
+  echo "Calico apply attempt $i failed, retrying in 15s..."
+  sleep 15
+done
+
+#change  2nd for cp -> cp name
+
+echo "=== Control-plane: best-effort background worker role labeling ==="
+nohup bash -c '
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+  for i in $(seq 1 60); do 
+    for n in $(kubectl get nodes -o name 2>/dev/null | grep -v cp || true); do   
+      kubectl label "$n" node-role.kubernetes.io/worker= --overwrite 2>/dev/null || true
+    done
+    sleep 15
+  done
+' > /var/log/k8s-label-workers.log 2>&1 &
+%{ endif ~}
+
+%{ if role == "worker" ~}
+echo "=== Worker: kubeadm join (retrying until the control-plane API is reachable) ==="
+for i in $(seq 1 30); do
+  if kubeadm join ${cp_ip}:6443 \
+      --token=${token} \
+      --discovery-token-ca-cert-hash sha256:${ca_hash} \
+      --node-name=${hostname}; then
+    break
+  fi
+  echo "kubeadm join attempt $i failed, retrying in 20s..."
+  sleep 20
+done
+%{ endif ~}
+
+echo "=== Bootstrap complete for ${hostname} (role=${role}) ==="

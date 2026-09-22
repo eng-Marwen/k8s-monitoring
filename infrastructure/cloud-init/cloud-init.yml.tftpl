@@ -1,0 +1,75 @@
+#cloud-config
+
+# Network
+network:
+  version: 2
+  renderer: networkd
+
+  ethernets:
+    primary:
+      match:
+        driver: virtio_net
+      dhcp4: true
+      dhcp-identifier: mac
+      optional: true
+
+# User Configuration
+users:
+  - name: ubuntu
+    groups:
+      - sudo
+    shell: /bin/bash
+    # Allow the ubuntu user to execute sudo commands
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    # Disable password-based login.
+    lock_passwd: true
+    # SSH public key used to access the VM.
+    ssh_authorized_keys:
+      - ${ssh_authorized_key}
+
+# SSH
+# Disable SSH password authentication.
+ssh_pwauth: false
+# Package Installation
+package_update: true
+packages:
+  # Allows libvirt/KVM to communicate with the guest.
+  - qemu-guest-agent
+
+# Kubernetes bootstrap files
+
+# The CA is only written on the control-plane. Terraform generated
+# it up front (pki.tf) so the resulting discovery-token-ca-cert-hash
+# is already known and baked into every worker's bootstrap script
+# below -- kubeadm init here just reuses this CA instead of generating a different one.
+
+write_files:
+%{ if role == "control-plane" ~}
+  - path: /etc/kubernetes/pki/ca.crt
+    permissions: '0644'
+    owner: root:root
+    content: |
+      ${indent(6, ca_cert_pem)}
+  - path: /etc/kubernetes/pki/ca.key
+    permissions: '0600'
+    owner: root:root
+    content: |
+      ${indent(6, ca_key_pem)}
+%{ endif ~}
+  - path: /root/bootstrap.sh
+    permissions: '0700'
+    owner: root:root
+    content: |
+      ${indent(6, bootstrap_script)}
+
+
+# Commands
+
+runcmd:
+  # Start the QEMU Guest Agent immediately
+  # and enable it automatically at boot.
+  - systemctl enable --now qemu-guest-agent
+
+  # Full node prep + kubeadm init/join + (control-plane only) Calico.
+  # See /var/log/k8s-auto-bootstrap.log for progress/troubleshooting.
+  - bash /root/bootstrap.sh
