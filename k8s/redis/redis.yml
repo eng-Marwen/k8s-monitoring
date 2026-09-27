@@ -6,50 +6,81 @@ metadata:
 spec:
   serviceName: redis-service-url
   replicas: 1
+
   selector:
     matchLabels:
       app: redis-pod-label
+
   template:
     metadata:
       labels:
         app: redis-pod-label
+
     spec:
       containers:
+
+        # =========================
+        # Redis
+        # =========================
         - name: redis-container
           image: redis:7
+
           ports:
             - name: redis
               protocol: TCP
               containerPort: 6379
+
           volumeMounts:
             - name: redis-data
-              # Must match the volume name below.
-
               mountPath: /data
-              # Redis stores its persistent data here.
+
+        # =========================
+        # Redis Prometheus Exporter
+        # =========================
+        - name: redis-exporter
+          image: oliver006/redis_exporter
+
+          ports:
+            - name: metrics
+              protocol: TCP
+              containerPort: 9121
+
+          env:
+            - name: REDIS_ADDR
+              value: redis://localhost:6379
 
       volumes:
         - name: redis-data
-          # Volume used by the Redis container.
-
           persistentVolumeClaim:
             claimName: redis-data
-            # Use the PVC named redis-data.
+
 ---
 apiVersion: v1
 kind: Service
-# Create a Kubernetes Service.
-
 metadata:
   name: redis-service-url
   namespace: samsar
+
+  # Labels used by the ServiceMonitor
+  labels:
+    app: redis-service-url
+
 spec:
   selector:
     app: redis-pod-label
+
   ports:
+
+    # Redis application traffic
     - name: redis
       protocol: TCP
       port: 6379
       targetPort: 6379
+
+    # Prometheus metrics
+    - name: metrics
+      protocol: TCP
+      port: 9121
+      targetPort: 9121
 
   type: ClusterIP
