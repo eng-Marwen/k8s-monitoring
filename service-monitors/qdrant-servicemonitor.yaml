@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor # It connects the Kubernetes Service to the Prometheus Server.
+metadata:
+  name: qdrant
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - samsar
+
+  selector:
+    matchLabels:
+      app: qdrant-service-url
+
+  endpoints:
+    - port: qdrant
+      path: /metrics
+      interval: 15s
