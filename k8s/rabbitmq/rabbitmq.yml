@@ -28,6 +28,8 @@ spec:
             - name: management
               containerPort: 15672
               # RabbitMQ Management UI/API port.
+            - name: metrics
+              containerPort: 15692
 
           volumeMounts:
             - name: rabbitmq-data
@@ -52,6 +54,8 @@ kind: Service
 metadata:
   name: rabbitmq-service-url
   namespace: samsar
+  labels:
+    app: rabbitmq-service-url
 spec:
   selector:
     app: rabbitmq-pod-label
@@ -67,5 +71,9 @@ spec:
       protocol: TCP
       port: 15672
       targetPort: 15672
+    - name: metrics
+      protocol: TCP
+      port: 15692
+      targetPort: 15692
 
   type: ClusterIP #default service type. This means the service is only accessible inside the Kubernetes cluster.
