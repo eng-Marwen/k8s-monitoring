@@ -3,6 +3,7 @@ kind: StatefulSet
 metadata:
   name: qdrant-statefulset
   namespace: samsar
+
 spec:
   serviceName: qdrant-service-url
   replicas: 1
@@ -43,6 +44,8 @@ kind: Service
 metadata:
   name: qdrant-service-url
   namespace: samsar
+  labels:
+    app: qdrant-service-url  #for the service monitor
 spec:
   selector:
     app: qdrant-pod-label
