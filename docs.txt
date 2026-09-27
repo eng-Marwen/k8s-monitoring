@@ -1,0 +1,22 @@
+Kubernetes Cluster
+│
+├── default
+│   └── Default namespace for your workloads
+│
+├── kube-system
+│   ├── CoreDNS
+│   ├── kube-proxy
+│   ├── Calico
+│   └── other Kubernetes components
+│
+├── kube-public
+│   └── Public cluster information
+│
+├── kube-node-lease
+│   └── Node Lease / heartbeats
+│
+├── ingress-nginx
+│   └── NGINX Ingress Controller
+│
+└── local-path-storage
+    └── Local Path Provisioner
