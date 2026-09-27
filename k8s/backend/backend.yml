@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: backend-container
-        image: engmarwen/samsar:backend-2.0.6
+        image: engmarwen/samsar:backend-2.1.0
         ports:
           - containerPort: 4000
         envFrom:
@@ -31,11 +31,14 @@ kind: Service
 metadata:
   name: backend-service-url
   namespace: samsar
+  labels:
+    app: backend-service-url
 spec:
   selector:
     app: backend-pod-label
   ports:
-    - protocol: TCP
+    - name : http
+      protocol: TCP
       port: 4001 #servicePort
       targetPort: 4000 #podPort
   type: ClusterIP
