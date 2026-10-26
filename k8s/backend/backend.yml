@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: backend-container
-        image: engmarwen/samsar:backend-2.1.0
+        image: engmarwen/samsar:backend-3.0.0
         ports:
           - containerPort: 4000
         envFrom:

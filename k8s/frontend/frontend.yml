@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: frontend-container
-        image: engmarwen/samsar:frontend-1.1.2
+        image: engmarwen/samsar:frontend-2.0.0
         ports:
           - containerPort: 80
         envFrom:
